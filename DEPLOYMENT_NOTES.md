@@ -345,6 +345,35 @@ Per-policy checkpoint sizes (identical for every task/embodiment):
 | GR00T N1.5 (`gr00t_n15`) | 7.2 GB |
 | π0.5 (`pi05`) | 11.9 GB |
 
+### Deployment target: RTX PRO 6000 Blackwell (96 GB) — effectively unconstrained
+
+If the machine carries an **RTX PRO 6000 Blackwell (96 GB GDDR7, sm_120)**, none of
+the limits above apply:
+
+| What | VRAM |
+|---|---|
+| Isaac Sim | ≈10 GB |
+| Largest single policy (π0.5) | ≈12–24 GB |
+| **All four policies resident at once** | **≈35–45 GB** |
+
+Consequences for the evaluation plan:
+
+* **The full matrix is feasible** — e.g.
+  `Sharpa × {26, 32, 73} × {ACT, DP, π0.5, GR00T}` = 12 cells.
+* **Parallelism is available.** 2–4 concurrent simulator instances fit comfortably;
+  wall-clock time scales down accordingly. Watch CPU cores rather than VRAM.
+* **Fine-tuning is possible on-device.** π0.5 / GR00T N1.5 can be fine-tuned in
+  place. This is the important part for research: reproducing released baselines
+  is only the *control condition*; a fine-tuned or modified policy is the
+  *contribution*.
+* **Disk becomes the binding constraint**, not VRAM. The full public corpus is
+  ~1 TB (assets 19 GB + teleopdata 440 GB + checkpoints 541 GB) — see Section 6
+  for selective downloads.
+* ⚠️ **Pitfall 8 still applies.** The RTX PRO 6000 is Blackwell (sm_120) as well,
+  so PyTorch **must** be the `+cu128` build. Verified working driver branch: 580.x.
+
+### Smaller cards (16 GB)
+
 **Implication:** ACT and DP fit comfortably alongside the simulator.
 **GR00T N1.5 and π0.5 will most likely OOM** on a 16 GB card. Options:
 
