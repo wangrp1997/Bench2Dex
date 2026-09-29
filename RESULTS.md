@@ -1,6 +1,6 @@
 # Bench2Dex — Sharpa baseline results
 
-`multi_iiwa7_with_sharpa` · tasks 26/32/73 · profile `none` · 50 episodes · seed 100000000 · GPU 2 · generated 2026-09-29 13:16
+`multi_iiwa7_with_sharpa` · tasks 26/32/73 · profile `none` · 50 episodes · seed 100000000 · GPU 2 · generated 2026-09-29 17:44
 
 Paper column = the project page's own per-task numbers (`bench2dex.github.io/assets/js/data.js`), None channel, out of 50.
 
@@ -12,7 +12,7 @@ Paper column = the project page's own per-task numbers (`bench2dex.github.io/ass
 | **ACT** | **7/50** = 14% | **8/50** = 16% | **0/50** = 0% | 17/9/0 |
 | **DP** | **0/50** = 0% | **3/50** = 6% | **0/50** = 0% | 0/2/0 |
 | **PI05** | **19/50** = 38% | **19/50** = 38% | **0/50** = 0% | 15/22/0 |
-| **GR00T** | **9/26** = 35% (26/50) | **5/24** = 21% (24/50) | **2/16** = 12% (16/50) | 17/12/10 |
+| **GR00T** | **19/50** = 38% | **12/50** = 24% | **8/50** = 16% | 17/12/10 |
 
 Not reproducing the paper (factor >2 apart): **ACT/26**: 7/50 = 14% vs paper 17/50 = 34%
 
@@ -30,15 +30,13 @@ Not reproducing the paper (factor >2 apart): **ACT/26**: 7/50 = 14% vs paper 17/
 | PI05 | 26 | 50 | 0.600 | 0.750 | 0.000 | 1.000 | 13/50 |
 | PI05 | 32 | 50 | 0.415 | 0.000 | 0.000 | 1.000 | 26/50 |
 | PI05 | 73 | 50 | 0.355 | 0.250 | 0.000 | 1.000 | 12/50 |
-| GR00T | 26 | 26 | 0.702 | 0.750 | 0.000 | 1.000 | 3/26 |
-| GR00T | 32 | 24 | 0.490 | 0.625 | 0.000 | 1.000 | 7/24 |
-| GR00T | 73 | 16 | 0.734 | 0.750 | 0.250 | 1.000 | 0/16 |
+| GR00T | 26 | 50 | 0.700 | 0.750 | 0.000 | 1.000 | 5/50 |
+| GR00T | 32 | 50 | 0.505 | 0.625 | 0.000 | 1.000 | 13/50 |
+| GR00T | 73 | 50 | 0.710 | 0.750 | 0.250 | 1.000 | 0/50 |
 
 ## 3. Progress
 
-- GR00T/26 26/50 (0.23 ep/min, ~103 min left)
-- GR00T/32 24/50 (0.21 ep/min, ~121 min left)
-- GR00T/73 16/50 (0.15 ep/min, ~228 min left)
+- nothing running (all cells complete)
 
 
 ## 4. Deviations & caveats
