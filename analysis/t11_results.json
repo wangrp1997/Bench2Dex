@@ -1,0 +1,23 @@
+{
+ "1": {
+  "k": 1,
+  "n_per_class": 62,
+  "auc_amount": 0.5,
+  "auc_thumb": 1.0,
+  "auc_learned": 0.9992195629552549
+ },
+ "2": {
+  "k": 2,
+  "n_per_class": 73,
+  "auc_amount": 0.5,
+  "auc_thumb": 1.0,
+  "auc_learned": 1.0
+ },
+ "3": {
+  "k": 3,
+  "n_per_class": 34,
+  "auc_amount": 0.5,
+  "auc_thumb": 1.0,
+  "auc_learned": 1.0
+ }
+}

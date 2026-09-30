@@ -1,0 +1,35 @@
+{
+ "A_k1": {
+  "pair": "A_k1 vs B_k1",
+  "tol0.15": {
+   "tol": 0.15,
+   "n_per_class": 25,
+   "force_vec_residual_median": 0.0,
+   "auc_forcemag": 0.5,
+   "auc_force_learned": 0.8888,
+   "auc_array_learned": 0.7256
+  },
+  "tol0.3": {
+   "tol": 0.3,
+   "n_per_class": 25,
+   "force_vec_residual_median": 0.0,
+   "auc_forcemag": 0.5,
+   "auc_force_learned": 0.8888,
+   "auc_array_learned": 0.7256
+  },
+  "tol0.5": {
+   "tol": 0.5,
+   "n_per_class": 25,
+   "force_vec_residual_median": 0.0,
+   "auc_forcemag": 0.5,
+   "auc_force_learned": 0.8888,
+   "auc_array_learned": 0.7256
+  }
+ },
+ "A_k2": {
+  "pair": "A_k2 vs B_k2"
+ },
+ "A_k3": {
+  "pair": "A_k3 vs B_k3"
+ }
+}

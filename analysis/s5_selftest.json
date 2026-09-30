@@ -1,0 +1,11 @@
+{
+ "source": "variants",
+ "n_frames": 2292,
+ "n_eps": 12,
+ "fail_rate": 0.5833333333333334,
+ "auc_amount": 1.0,
+ "auc_torque": 0.5857142857142857,
+ "auc_array": 1.0,
+ "auc_array_resid": 1.0,
+ "auc_fused": 1.0
+}

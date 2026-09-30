@@ -72,6 +72,7 @@ class InferenceRecorder:
         self._ep = {
             "obj_ids": list(object_ids),
             "qpos": [],
+            "qeffort": [],          # joint torques (applied_torque) -- a force-related channel
             "action": [],
             "joint_names": list(joint_names) if joint_names else None,
             "action_names": list(action_names) if action_names else None,
@@ -94,10 +95,16 @@ class InferenceRecorder:
         action: np.ndarray,
         object_states: Dict[str, Dict[str, np.ndarray]],
         camera_frames: Dict[str, np.ndarray | None],
+        qeffort: np.ndarray | None = None,
     ) -> None:
         if self._ep is None:
             return
         self._ep["qpos"].append(np.asarray(qpos, dtype=np.float32).copy())
+        # joint torques: recorded so rollouts carry a force-related channel alongside tactile.
+        # Without this the recorded rollouts only had joint_names/qpos/tactile, which made
+        # any tactile-vs-force comparison impossible on real episodes.
+        if qeffort is not None:
+            self._ep["qeffort"].append(np.asarray(qeffort, dtype=np.float32).copy())
         self._ep["action"].append(np.asarray(action, dtype=np.float32).copy())
         for oid in self._ep["obj_ids"]:
             s = object_states.get(oid)
@@ -207,6 +214,9 @@ class InferenceRecorder:
                     data=np.asarray(json.dumps(value, sort_keys=True), dtype=str_dtype),
                 )
             hf.create_dataset("robot/qpos", data=np.array(self._ep["qpos"], dtype=np.float32))
+            if self._ep.get("qeffort") and len(self._ep["qeffort"]) == len(self._ep["qpos"]):
+                hf.create_dataset("robot/qeffort",
+                                  data=np.array(self._ep["qeffort"], dtype=np.float32))
             hf.create_dataset("action/commanded", data=np.array(self._ep["action"], dtype=np.float32))
             if self._ep.get("joint_names"):
                 hf.create_dataset("robot/joint_names", data=np.asarray(self._ep["joint_names"], dtype=h5py.string_dtype()))

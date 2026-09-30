@@ -1,0 +1,26 @@
+{
+ "26": {
+  "n_frames": 4000,
+  "n_eps": 20,
+  "auc_amount": 0.9880952380952381,
+  "auc_forcemag": 0.9047619047619048,
+  "auc_force_learned": 0.5119047619047619,
+  "auc_array_learned": 0.8571428571428572
+ },
+ "32": {
+  "n_frames": 3957,
+  "n_eps": 20,
+  "auc_amount": 0.8266666666666667,
+  "auc_forcemag": 0.8,
+  "auc_force_learned": 0.72,
+  "auc_array_learned": 0.8133333333333334
+ },
+ "73": {
+  "n_frames": 5818,
+  "n_eps": 20,
+  "auc_amount": 0.71875,
+  "auc_forcemag": 0.6875,
+  "auc_force_learned": 0.765625,
+  "auc_array_learned": 0.890625
+ }
+}

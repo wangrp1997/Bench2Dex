@@ -96,3 +96,6 @@ output_zdj/
 outputs/
 .codex
 docs/
+# Analysis artifacts: no binary captures in the repo
+docs/**/*.hdf5
+docs/**/*.log

@@ -1047,6 +1047,7 @@ def _run_episode(
             runtime_joint_names,
         )
 
+    _event_state.update({"ema": None, "jbase": None, "fires": 0, "steps": 0})
     _record_joint_limit_baseline("post_reset")
 
     # Create ContactSensorReader after sim.reset() if contact_pairs configured
@@ -1264,11 +1265,19 @@ def _run_episode(
                 for _cid in camera_rig.camera_ids:
                     _cf = frames.get(_cid)
                     _cam_frames[_cid] = _cf.get("rgb") if isinstance(_cf, dict) else getattr(_cf, "rgb", None)
+                _qe = None
+                try:
+                    _at = getattr(robot_art.data, "applied_torque", None)
+                    if _at is not None:
+                        _qe = _at[0].detach().cpu().numpy()
+                except Exception:
+                    _qe = None
                 _recorder.record_step(
                     qpos=robot_art.data.joint_pos[0].detach().cpu().numpy(),
                     action=_current_action,
                     object_states=_get_object_states(interactive_objects, _recorder.current_object_ids()),
                     camera_frames=_cam_frames,
+                    qeffort=_qe,
                 )
 
             # Apply current action target every physical step
@@ -1278,6 +1287,31 @@ def _run_episode(
                 action_vec = raw_action_vec
                 if _active_dof_info is not None and len(action_vec) == _active_dof_info.active_dof:
                     action_vec = expand_to_full(action_vec, _active_dof_info)
+                # ---- contact-domain intervention hook (OFF unless B2D_EXTRA_CLOSE is set)
+                # These tasks' outcome is monotone in the CONTACT DEFICIT (failures touch
+                # systematically less), so the appropriate repair is to INCREASE contact.
+                # B2D_EXTRA_CLOSE adds a constant closure to the hand flexion joints; this is
+                # the "unconditional" control arm, used to check whether extra closure helps
+                # at all before building the monitor-triggered version.
+                # Unset -> byte-identical behaviour to the stock baseline.
+                _extra_close = float(os.environ.get("B2D_EXTRA_CLOSE", "0") or 0.0)
+                if _extra_close > 0.0 and _active_dof_info is not None:
+                    try:
+                        if _extra_close_idx[0] is None:
+                            _jn = list(_active_dof_info.full_joint_names)
+                            _extra_close_idx[0] = [
+                                i for i, n in enumerate(_jn)
+                                if any(k in n for k in ("MCP_FE", "IP", "PIP", "DIP"))
+                                and any(k in n for k in ("thumb", "index", "middle",
+                                                         "ring", "pinky"))
+                            ]
+                            print(f"[intervention] B2D_EXTRA_CLOSE={_extra_close} applied to "
+                                  f"{len(_extra_close_idx[0])} hand flexion joints "
+                                  f"e.g. {[list(_jn)[i] for i in _extra_close_idx[0][:3]]}")
+                        for _i in _extra_close_idx[0]:
+                            action_vec[_i] = float(action_vec[_i]) + _extra_close
+                    except Exception:
+                        pass
                 if target is not None and len(action_vec) == target.shape[1]:
                     target[0, :] = torch.from_numpy(action_vec).to(
                         dtype=target.dtype, device=target.device,
@@ -1316,12 +1350,57 @@ def _run_episode(
                     for _obj_id, _forces in _contact_data.items():
                         if _obj_id in states:
                             states[_obj_id]["contact_forces"] = _forces
+
                 _robot_state = None
                 if robot_art is not None:
                     try:
                         _robot_state = read_joint_state(robot_art)
                     except Exception:
                         pass
+
+                    # ---- contact-EVENT-triggered re-planning (mechanism A) ------------
+                    # The chunked policies commit to action_horizon actions and play them
+                    # open-loop (GR00T: 16 x 3 phys steps = 48 steps = 0.8 s). Measured on
+                    # our rollouts, 36-78% of those windows contain a contact event the
+                    # policy never sees. Here a contact event is detected as a sharp change
+                    # in applied joint torque relative to its running average, and it flushes
+                    # the queued chunk so the next query re-plans on fresh contact feedback.
+                    _emode = os.environ.get("B2D_EVENT_REPLAN", "off").lower()
+                    if _emode != "off" and _robot_state is not None:
+                        try:
+                            _e = _robot_state.get("qeffort")
+                            if _e is not None and len(_e):
+                                _mag = float(np.abs(np.asarray(_e)).sum())
+                                _st = _event_state
+                                if _st["ema"] is None:
+                                    _st["ema"] = _mag
+                                _ema = _st["ema"]
+                                _jump = abs(_mag - _ema) / (_ema + 1e-6)
+                                _st["ema"] = 0.9 * _ema + 0.1 * _mag
+                                # fire only on EXCURSIONS relative to this run's own
+                                # torque-jump activity, so the trigger rate stays at
+                                # event scale instead of degenerating into "re-plan always"
+                                _jbase = _st["jbase"]
+                                _st["jbase"] = _jump if _jbase is None else \
+                                    0.95 * _jbase + 0.05 * _jump
+                                _fire = False
+                                if _emode == "event":
+                                    _c = float(os.environ.get("B2D_EVENT_K", "6"))
+                                    _fire = _jbase is not None and \
+                                        _jump > _c * (_jbase + 1e-9)
+                                elif _emode == "random":
+                                    _fire = np.random.rand() < float(os.environ.get(
+                                        "B2D_RANDOM_P", "0.01"))
+                                _st["steps"] += 1
+                                if _fire and _queued_actions:
+                                    _queued_actions.clear()
+                                    _st["fires"] += 1
+                                if _st["steps"] % 300 == 0:
+                                    print(f"[event] step={_st['steps']} fires={_st['fires']} "
+                                          f"queries={_policy_query_count} mag={_mag:.1f} "
+                                          f"jump={_jump:.3f}", flush=True)
+                        except Exception:
+                            pass
                 if _robot_state is not None:
                     _latest_metric_robot_state = _robot_state
                 metric_tracker.update(
@@ -1564,6 +1643,10 @@ def _run_episode(
 
     _log_memory(f"ep {episode_idx} after episode cleanup", args.device)
     return episode_result
+
+
+_extra_close_idx: list = [None]   # mutable holder for hand-joint indices
+_event_state: dict = {"ema": None, "jbase": None, "fires": 0, "steps": 0}
 
 
 def main() -> None:
