@@ -15,38 +15,45 @@ REP = Path("/mnt/public/datasets/bench2dex/rollouts")
 TASKS = ["26", "32", "73"]
 
 
-def recorded_dir(t):
-    ds = [d for d in REC.glob(f"gr00t_{t}_*") if (d / "rollouts").is_dir()]
-    ds.sort(key=lambda d: (d / "rollouts").stat().st_mtime)
-    return ds[-1] / "rollouts" if ds else None
+def recorded_dirs(t):
+    """ALL chunk directories, not just the newest.
+
+    The chunked collection (instance restarted every 15 episodes to dodge the CUDA faults)
+    split each task across several gr00t_<task>_<timestamp> dirs. An earlier version of this
+    function returned only the newest, so most rollouts never received their torques - the
+    same single-dir mistake that left 51 episodes without tactile.
+    """
+    ds = [d / "rollouts" for d in REC.glob(f"gr00t_{t}_*") if (d / "rollouts").is_dir()]
+    return sorted(ds, key=lambda d: d.stat().st_mtime)
 
 
 def merge(t):
-    rd = recorded_dir(t)
-    if rd is None:
+    dirs = recorded_dirs(t)
+    if not dirs:
         print(f"   task {t}: 无录制目录"); return 0
     n_ok = n_skip = 0
-    for outcome in ("success", "failure"):
+    for rd in dirs:
+      for outcome in ("success", "failure"):
         for src in sorted((rd / outcome).glob("*.hdf5")):
-            dst = REP / t / outcome / src.name
-            if not dst.exists():
-                n_skip += 1; continue
-            try:
-                with h5py.File(src, "r") as f:
-                    if "qeffort" not in f["robot"]:
-                        n_skip += 1; continue
-                    qe = np.asarray(f["robot/qeffort"][:], np.float32)
-                with h5py.File(dst, "r+") as g:
-                    n = int(g["meta/frame_count"][()]) if "meta/frame_count" in g else None
-                    if n is not None and len(qe) != n:
-                        print(f"      !! 帧数不符 {src.name}: qeffort {len(qe)} vs frame_count {n}")
-                        n_skip += 1; continue
-                    if "qeffort" in g["robot"]:
-                        del g["robot/qeffort"]
-                    g["robot"].create_dataset("qeffort", data=qe)
-                n_ok += 1
-            except Exception as e:
-                print(f"      !! {src.name}: {type(e).__name__} {e}")
+              dst = REP / t / outcome / src.name
+              if not dst.exists():
+                  n_skip += 1; continue
+              try:
+                  with h5py.File(src, "r") as f:
+                      if "qeffort" not in f["robot"]:
+                          n_skip += 1; continue
+                      qe = np.asarray(f["robot/qeffort"][:], np.float32)
+                  with h5py.File(dst, "r+") as g:
+                      n = int(g["meta/frame_count"][()]) if "meta/frame_count" in g else None
+                      if n is not None and len(qe) != n:
+                          print(f"      !! 帧数不符 {src.name}: qeffort {len(qe)} vs frame_count {n}")
+                          n_skip += 1; continue
+                      if "qeffort" in g["robot"]:
+                          del g["robot/qeffort"]
+                      g["robot"].create_dataset("qeffort", data=qe)
+                  n_ok += 1
+              except Exception as e:
+                  print(f"      !! {src.name}: {type(e).__name__} {e}")
     print(f"   task {t}: 合并 {n_ok} 个, 跳过 {n_skip} 个")
     return n_ok
 
