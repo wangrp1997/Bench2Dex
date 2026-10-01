@@ -19,7 +19,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from p4_task import PressForceEnv, N_TAX, F_TARGET
+from p4_task import PadForceEnv, GRID as N_TAX, F_TARGET
 
 TAC_DIM = N_TAX * N_TAX * 3
 
@@ -46,7 +46,9 @@ class Policy(nn.Module):
         return mu, self.critic(h).squeeze(-1), self.pred(x)
 
 
-def rollout(env, net, horizon, act_scale=0.08):
+# act_scale matched to the calibrated control authority (see p5b_ceiling.py): the
+# effective step must be ~0.005-0.02 rad/step, not 0.08 which saturated the finger.
+def rollout(env, net, horizon, act_scale=1.0):
     obs, acts, logps, rews, vals, preds, tacs, forces = [], [], [], [], [], [], [], []
     o = env.reset()
     for _ in range(horizon):
@@ -56,7 +58,7 @@ def rollout(env, net, horizon, act_scale=0.08):
             std = net.logstd.exp()
             a = torch.distributions.Normal(mu, std).sample()
             lp = torch.distributions.Normal(mu, std).log_prob(a).sum(-1)
-        a_np = (a[0].numpy() * act_scale).astype(np.float32)
+        a_np = (a[0].numpy() * act_scale).astype(np.float32)   # act_dim = finger dofs only
         o2, r, ftot = env.step(a_np)
         obs.append(o); acts.append(a[0].numpy()); logps.append(float(lp)); rews.append(r)
         vals.append(float(v)); preds.append(p[0].numpy())
@@ -82,8 +84,8 @@ def main():
     a = ap.parse_args()
     torch.manual_seed(a.seed); np.random.seed(a.seed)
 
-    env = PressForceEnv(seed=a.seed)
-    obs_dim, act_dim = env.obs_dim, env.n_dof
+    env = PadForceEnv(seed=a.seed)
+    obs_dim, act_dim = env.obs_dim, env.act_dim
     pred_dim = TAC_DIM if a.target == "raw" else 1
     net = Policy(obs_dim, act_dim, pred_dim, a.route)
     opt = torch.optim.Adam(net.parameters(), lr=3e-3)
@@ -114,7 +116,7 @@ def main():
         hist.append({"iter": it, "mean_rew": float(R.mean()), "mean_F": meanF,
                      "pred_loss": float(ploss.detach())})
         if it % 5 == 0:
-            print(f"   it{it:3d} rew={R.mean():8.3f} |F|={meanF:7.3f} "
+            print(f"IT {it:4d} rew={R.mean():8.4f} meanF={meanF:7.3f} "
                   f"predloss={float(ploss.detach()):.4f}", flush=True)
     best = max(h["mean_rew"] for h in hist[-5:])
     res = {"route": a.route, "target": a.target, "seed": a.seed,
