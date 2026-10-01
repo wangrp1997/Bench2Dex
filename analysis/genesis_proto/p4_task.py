@@ -62,7 +62,11 @@ class PadForceEnv:
 
     def reset(self):
         self.sc.reset()
-        self._target = (F_TARGET * self.rng.uniform(0.6, 1.4)) if self.randomise_target else F_TARGET
+        # WIDE randomisation across nearly the whole reachable band (3.5 - 15.4). With only
+        # +-40% the optimal action never strayed far from 0, a constant action scored almost as
+        # well as the optimum, and PPO had nothing to learn. Spanning the band forces the policy
+        # to read the force and adapt every episode.
+        self._target = (self.rng.uniform(4.5, 14.5)) if self.randomise_target else F_TARGET
         self._z = self.z0
         self._place()
         for _ in range(3):

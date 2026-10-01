@@ -31,19 +31,26 @@ class Policy(nn.Module):
         self.enc = nn.Sequential(nn.Linear(obs_dim, hidden), nn.Tanh(),
                                  nn.Linear(hidden, hidden), nn.Tanh())
         # predictor: future tactile from current obs (always trained on the aux loss)
-        self.pred = nn.Sequential(nn.Linear(obs_dim, hidden), nn.Tanh(), nn.Linear(hidden, pred_dim))
+        # The predictor MUST read the encoder's output. An earlier version fed it the raw
+        # observation through its own separate layers, so the auxiliary loss trained a network
+        # completely disconnected from the policy: route=aux then reproduced route=none exactly,
+        # to every printed digit, across all seeds. Sharing the encoder is the whole point of
+        # "prediction as training-only supervision".
+        self.pred = nn.Sequential(nn.Linear(hidden, hidden), nn.Tanh(), nn.Linear(hidden, pred_dim))
         extra = pred_dim if route == "test" else 0
         self.act = nn.Linear(hidden + extra, act_dim)
         self.logstd = nn.Parameter(torch.zeros(act_dim) - 1.0)
         self.critic = nn.Linear(hidden, 1)
 
     def forward(self, x):
+        # Keep the encoder output separate: an earlier version reassigned `h` to the
+        # concatenated [h, prediction] and then fed it to the critic, which expects the
+        # encoder width - "mat1 and mat2 shapes cannot be multiplied (1x129 and 128x1)".
         h = self.enc(x)
-        if self.route == "test":
-            p = self.pred(x)
-            h = torch.cat([h, p], -1)
-        mu = self.act(h)
-        return mu, self.critic(h).squeeze(-1), self.pred(x)
+        pred = self.pred(h)
+        act_in = torch.cat([h, pred], -1) if self.route == "test" else h
+        mu = self.act(act_in)
+        return mu, self.critic(h).squeeze(-1), pred
 
 
 # act_scale matched to the calibrated control authority (see p5b_ceiling.py): the
