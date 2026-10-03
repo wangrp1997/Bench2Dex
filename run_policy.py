@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import json
 import logging
 import os
 import sys
@@ -38,6 +39,86 @@ import threading
 from collections import deque
 
 import numpy as np
+
+
+def experiment_condition() -> tuple[str, dict]:
+    """Describe behaviour-changing env switches as (dir_suffix, detail).
+
+    The switches below (`B2D_EXTRA_CLOSE`, `B2D_EVENT_REPLAN`) change what the
+    robot *does*, but for a while they left no trace in ``output/metric/``: on
+    2026-09-30 a hand-launched ``B2D_EXTRA_CLOSE=0.25`` pilot wrote 35
+    zero-stage episodes into ``gr00t_26_0930_1322``, and the report -- which
+    keyed on the newest directory only -- read that as the GR00T baseline and
+    published a false collapse (see RESULTS.md section 5).
+
+    Tagging therefore lives here rather than in the eval shell scripts, so that
+    hand-run commands are covered too. Returns ``("", {})`` for a stock run, so
+    baseline directory names are unchanged.
+    """
+    detail: dict = {}
+    parts: list[str] = []
+
+    raw_close = os.environ.get("B2D_EXTRA_CLOSE", "")
+    try:
+        close = float(raw_close or 0.0)
+    except ValueError:
+        close = 0.0
+    if close > 0.0:
+        detail["B2D_EXTRA_CLOSE"] = close
+        parts.append("close" + ("%g" % close).replace(".", ""))
+
+    mode = (os.environ.get("B2D_EVENT_REPLAN", "off") or "off").lower()
+    if mode in ("event", "random"):
+        detail["B2D_EVENT_REPLAN"] = mode
+        if mode == "event":
+            k = os.environ.get("B2D_EVENT_K", "6")
+            detail["B2D_EVENT_K"] = k
+            parts.append(f"evtK{k}")
+        else:
+            p = os.environ.get("B2D_RANDOM_P", "0.01")
+            detail["B2D_RANDOM_P"] = p
+            parts.append("evtP" + str(p).replace(".", ""))
+
+    return ("_" + "_".join(parts) if parts else ""), detail
+
+
+def write_run_meta(out_dir, args_cli) -> None:
+    """Record why this directory exists, next to the data it describes.
+
+    Written once per directory (never clobbered), so a resumed run keeps the
+    provenance of the run that created it.
+    """
+    import datetime
+    from pathlib import Path as _Path
+
+    suffix, detail = experiment_condition()
+    meta_path = _Path(out_dir) / "run_meta.json"
+    if meta_path.exists():
+        return
+    try:
+        _Path(out_dir).mkdir(parents=True, exist_ok=True)
+        meta = {
+            "condition": suffix.lstrip("_") or "baseline",
+            "behaviour_env": detail,
+            "tagged_dir_suffix": suffix,
+            "task": getattr(args_cli, "task", None),
+            "policy_type": getattr(args_cli, "policy_type", None),
+            "policy_display_name": getattr(args_cli, "policy_display_name", None),
+            "ckpt_dir": getattr(args_cli, "ckpt_dir", None),
+            "ckpt_name": getattr(args_cli, "ckpt_name", None),
+            "num_episodes": getattr(args_cli, "num_episodes", None),
+            "start_episode": getattr(args_cli, "start_episode", None),
+            "seed": getattr(args_cli, "seed", None),
+            "generalization_profile": getattr(args_cli, "generalization_profile", None),
+            "argv": sys.argv,
+            "created": datetime.datetime.now().isoformat(timespec="seconds"),
+        }
+        meta_path.write_text(json.dumps(meta, indent=2) + "\n")
+        if suffix:
+            print(f"[provenance] condition '{meta['condition']}' -> dir suffix '{suffix}'",
+                  flush=True)
+    except OSError as exc:  # never let bookkeeping break an evaluation run
+        print(f"[provenance] WARN could not write {meta_path}: {exc}", flush=True)
 
 # Pre-import pinocchio before Isaac Sim
 try:
@@ -1938,6 +2019,14 @@ def main() -> None:
             output_root = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "output", "metric"))
             out_dir_path = os.path.join(output_root, folder_name)
 
+        # Behaviour-changing conditions get a suffix, so provenance is visible in
+        # `output/metric/` instead of only in the stdout log (RESULTS.md section 5).
+        # Stock runs are unaffected: the suffix is empty and names are unchanged.
+        if out_dir_path:
+            _cond_suffix, _cond_detail = experiment_condition()
+            if _cond_suffix and not str(out_dir_path).endswith(_cond_suffix):
+                out_dir_path = str(out_dir_path) + _cond_suffix
+
         if out_dir_path:
             from benchmark.results import (
                 append_episode_result as _append_episode_result,
@@ -1946,6 +2035,7 @@ def main() -> None:
             )
             from pathlib import Path as _Path
             _output_dir = _Path(out_dir_path)
+            write_run_meta(out_dir_path, args_cli)
             # --policy-display-name takes priority (ckpt-relative path);
             # fall back to --policy-name, then ckpt_dir/ckpt_name, then policy type.
             _policy_name = (

@@ -1,6 +1,6 @@
 # Bench2Dex — Sharpa baseline results
 
-`multi_iiwa7_with_sharpa` · tasks 26/32/73 · profile `none` · 50 episodes · seed 100000000 · GPU 2 · generated 2026-09-29 17:44
+`multi_iiwa7_with_sharpa` · tasks 26/32/73 · profile `none` · 50 episodes · seed 100000000 · GPU 2 · generated 2026-10-03 11:04
 
 Paper column = the project page's own per-task numbers (`bench2dex.github.io/assets/js/data.js`), None channel, out of 50.
 
@@ -38,6 +38,19 @@ Not reproducing the paper (factor >2 apart): **ACT/26**: 7/50 = 14% vs paper 17/
 
 - nothing running (all cells complete)
 
+**Excluded from sections 1-2.** Every run writes `run_meta.json` via `run_policy.py`; only `condition == "baseline"` may enter the tables, and the choice of directory per cell is listed here rather than made silently:
+- 21 dir(s) written under a **different experimental condition** (behaviour-changing env switch -- these are results of the intervention study, not baselines):
+  - `baseline-recording`: 15 dir(s), e.g. `gr00t_26_0929_2336`
+  - `close0.25`: 2 dir(s), e.g. `gr00t_26_0930_1318`
+  - `evt`: 1 dir(s), e.g. `gr00t_26_0930_1538`
+  - `evtK15`: 1 dir(s), e.g. `gr00t_26_0930_1543`
+  - `evtMixed`: 1 dir(s), e.g. `gr00t_26_0930_1550`
+  - `unknown`: 1 dir(s), e.g. `gr00t_26_0930_1534`
+- 3 **superseded/partial** baseline dir(s) (a complete >= 50-episode run outranks a newer fragment):
+  - ACT/26 `26_iiwa7_sharpa_policy_best_none_0928_1948` (n=2)
+  - ACT/26 `26_iiwa7_sharpa_policy_best_none_0928_2052` (n=2)
+  - GR00T/26 `gr00t_26_0929_1110` (n=1)
+
 
 ## 4. Deviations & caveats
 
@@ -58,8 +71,19 @@ Not reproducing the paper (factor >2 apart): **ACT/26**: 7/50 = 14% vs paper 17/
   the 19 KB physics-only USD. It appears in ACT and DP logs alike and the asset download matches the
   documented 52,764 files, so it is an upstream asset trait -- but wrist cameras may lack hand
   geometry, a candidate explanation for the ACT/26 shortfall.
-- **Run-to-run variance.** Two identical smoke runs (same seed, same checkpoint) gave LSCR 1.00 vs
-  0.25 on the same episode. Treat each cell as one sample.
+- **Run-to-run variance sets the resolution limit -- but the worst "outlier" was not variance.**
+  Clean task-26 runs with the same checkpoint, seed, scene and protocol give **19/50** and **15/50**
+  (plus 17/40 on the shifted episode range 21-60): an 8-10 pp spread, i.e. within the binomial
+  standard error of n=50 (~7 pp). So differences below ~15 pp are not resolvable here: read the
+  table as "reproduces the paper's ordering", not as a ranking.
+  The **0/35** run that first looked like a 38 pp variance blow-up was a *different experimental
+  condition*: it ran with `B2D_EXTRA_CLOSE=0.25` (`run_policy.py:1297`), the **unconditional
+  extra-closure intervention arm**, which adds +0.25 rad to 28 hand flexion joints. It printed
+  `[intervention] B2D_EXTRA_CLOSE=0.25 applied to 28 hand flexion joints` in its log, and
+  `LSCR=0.0` on all 35 episodes is the intervention working as designed -- the hand is clamped
+  shut, so no stage can complete. Not a bad policy, not harness noise, and (see section 5) it was
+  invisible in `output/metric/` because the directory name and `per_episode.jsonl` carry no record
+  of the condition. Earlier smoke runs also gave LSCR 1.00 vs 0.25 on the same episode.
 - **GR00T's numbers rest on a reconstructed `experiment_cfg`** (see section 5). If the authors
   finetuned on a different subset or config, their normalization differs and the scores shift.
 - Data/weights live on `/mnt/public/datasets/bench2dex/` (NFS, symlinked); only envs and code on `/home`.
@@ -105,6 +129,48 @@ Not reproducing the paper (factor >2 apart): **ACT/26**: 7/50 = 14% vs paper 17/
   finished ACT stage matched the live task-26 process of the current stage; it killed all three DP
   clients and, via `kill -9 -$ppid`, took every tmux session with them, including the newly started
   pi0.5 clients. Stalls are now handled by hand.
+- **`output/metric/gr00t_*` is not one experiment.** The same namespace is written by three
+  different things: baseline evals (`72_eval_gr00t.sh`), rollout recordings
+  (`99_eval_gr00t_record.sh`), and **intervention pilots that set a behaviour-changing env var**
+  (`B2D_EXTRA_CLOSE`, `B2D_EVENT_REPLAN`). Neither the directory name nor `per_episode.jsonl`
+  records which one it was -- the only trace is an env-var-dependent line in the stdout log.
+  Known intervention dirs: `gr00t_26_0930_1318` and `gr00t_26_0930_1322`
+  (`B2D_EXTRA_CLOSE=0.25`); `gr00t_26_0930_1538`, `gr00t_26_0930_1543`, `gr00t_26_0930_1550`
+  (`B2D_EVENT_REPLAN`). `gr00t_26_0930_1322` is the 0/35 run: it is the *unconditional
+  extra-closure* arm of the intervention study (`run_policy.py:1290-1314` -- "Unset ->
+  byte-identical behaviour to the stock baseline"), and its `LSCR=0.0` on every episode is the
+  intervention doing its job, not a broken policy.
+  **Fix applied (2026-10-03).** Provenance now lives in the data, not in log archaeology:
+  `run_policy.py::experiment_condition()` appends the condition to the output directory
+  (`_close025`, `_evtK6`, ...; stock runs keep their exact old names) and `write_run_meta()`
+  writes `<dir>/run_meta.json` once per directory. It is done there rather than in the eval
+  shell scripts precisely because the offending pilot was launched by hand, so a script-level
+  fix would not have caught it. The four eval scripts source `_deploy_logs/00_condition_tag.sh`
+  so their own `$OUT` (and therefore `$OUT/rollouts`) still matches the directory actually
+  written; that shell rule is unit-checked to produce byte-identical suffixes to the Python one.
+  `99_make_report.py` now admits a directory **only** when `run_meta.json` says
+  `condition == "baseline"`, and refuses an untagged dir outright -- that single rule is what
+  stops this bug recurring, because the 0/35 dir would simply not be eligible.
+  Historical dirs were backfilled with retro-inferred metadata
+  (`"provenance": "retro-inferred 2026-10-03"`, with the evidence recorded), so the strict rule
+  is decidable for old data too.
+- **The report itself reported a false GR00T baseline for four days.** `99_eval_gr00t_record.sh`
+  (rollout recording for the failure-prediction study) writes into the *same*
+  `output/metric/gr00t_<task>_<mmdd_HHMM>` namespace as the baseline evals and leaves a
+  `<dir>/rollouts/` subdir. `collect()` used to take the newest non-empty dir per cell, so from
+  2026-09-30 it reported a crashed 7-episode fragment as GR00T's result (**1/7, 0/3, 0/5**) instead
+  of the real complete runs (**19/50, 12/50, 8/50**, matching the paper's 17/12/10).
+  Fixed: recording dirs are excluded, a complete >= 50-episode run outranks a newer fragment, and
+  every discarded directory is listed in section 3. *Lesson: never key the report on mtime alone.*
+- **Rollout-dataset provenance audited (clean).** An intervention run writes full-length episodes
+  that are indistinguishable, in the data, from genuine baseline failures -- so a failure-predictor
+  trained on them would be learning the intervention, not the task. The 152-episode tactile+torque
+  dataset was therefore checked against every run by hashing `robot/qpos`: all 152 files trace to
+  the known-good runs (26: 43+7+2, 32: 46+1+3, 73: 15+15+15+5), with **zero** files from any
+  intervention run (1322/1534/1538/1543/1550 all contribute 0), and no duplicate episode indices.
+  (Replay preserves `qpos` bit-exactly, so the hash is a valid provenance fingerprint.)
+  Note the flip side: recording files are keyed by episode index only, so a later run silently
+  overwrites an earlier one at the same index -- provenance must be audited, never assumed.
 - **One intermediate commit is misleading by construction:** `ed405b7` was auto-pushed while the JAX
   blow-up had left pi0.5's output dirs empty, so that revision reports pi0.5 as 0/0. Later commits
   supersede it.
@@ -113,7 +179,8 @@ Not reproducing the paper (factor >2 apart): **ACT/26**: 7/50 = 14% vs paper 17/
 ## 6. Artifacts
 
 - per-episode data: `output/metric/*/per_episode.jsonl`
+- run provenance: `output/metric/*/run_meta.json` (written by `run_policy.py`; the report admits a directory only when `condition == "baseline"`)
 - raw logs: `_deploy_logs/` (`20_eval_*` ACT, `70_/76_*` DP, `72_gr00t_*` GR00T, `77_/78_*` pi0.5)
-- repro scripts: `_deploy_logs/{20,21,70,72,73,75,76,77,78,80,95,99}_*`  ·  SUMMARY: 12/12 checkpoint dirs complete
+- repro scripts: `_deploy_logs/{00,20,21,70,72,73,75,76,77,78,80,95,99}_*`  ·  SUMMARY: 12/12 checkpoint dirs complete
 - report source: `_deploy_logs/99_make_report.py` (regenerates this file)
 
