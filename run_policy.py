@@ -1371,6 +1371,7 @@ def _run_episode(
                     _cam_frames[_cid] = _cf.get("rgb") if isinstance(_cf, dict) else getattr(_cf, "rgb", None)
                 _recorder.record_step(
                     qpos=robot_art.data.joint_pos[0].detach().cpu().numpy(),
+                    qvel=robot_art.data.joint_vel[0].detach().cpu().numpy(),
                     action=_current_action,
                     object_states=_get_object_states(interactive_objects, _recorder.current_object_ids()),
                     camera_frames=_cam_frames,
