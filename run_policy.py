@@ -868,6 +868,7 @@ def _build_remote_policy_obs(
     instruction: str | None = None,
     robot_state: dict | None = None,
     robot_key: str | None = None,
+    object_states: dict | None = None,
 ) -> dict | None:
     qpos = _policy_qpos(robot_art, robot_state)
     if robot_key:
@@ -896,6 +897,8 @@ def _build_remote_policy_obs(
             "cam_stereo_right": {"rgb": _frame_rgb("cam_stereo_right", "cam_overhead")},
         },
         "joint_action": _split_legacy_joint_action(qpos),
+        "joint_velocity": robot_art.data.joint_vel[0].detach().cpu().numpy(),
+        "object_states": object_states or {},
         "pointcloud": None,
         "language": instruction or "",
     }
@@ -1306,6 +1309,7 @@ def _run_episode(
                             instruction=task_instruction,
                             robot_state=_latest_metric_robot_state,
                             robot_key=_remote_reindex_robot_key(policy, args, robot_key),
+                            object_states=_get_object_states(interactive_objects, object_ids),
                         )
                     else:
                         obs = _build_policy_obs(
