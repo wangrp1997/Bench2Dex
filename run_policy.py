@@ -66,6 +66,10 @@ parser.add_argument("--ckpt-dir", type=str, default=None,
                     help="Directory containing policy_best.ckpt and dataset_stats.pkl.")
 parser.add_argument("--record-dir", type=str, default=None,
                     help="Directory to save HDF5 snapshots of successful episodes (cleared at startup, low-bitrate JPG).")
+parser.add_argument("--reset-bank", type=str, default=None,
+                    help="Optional SuperMimic reset-bank .pt used to initialize the episode.")
+parser.add_argument("--reset-bank-index", type=int, default=0,
+                    help="Reset-bank row index; -1 cycles by episode.")
 parser.add_argument("--record-all", action="store_true", default=False,
                     help="Save ALL episodes (not just successes). Failures go to failure/ subdirectory.")
 parser.add_argument("--ckpt-name", type=str, default="policy_best.ckpt",
@@ -1009,6 +1013,33 @@ def _start_stdin_skip_listener() -> None:
 
 
 
+def _apply_reset_bank_state(path: str, index: int, episode_idx: int,
+                            sim, robot_art, interactive_objects: dict) -> None:
+    import torch as _torch
+    payload = _torch.load(path, map_location="cpu", weights_only=True)
+    n = int(payload["qpos"].shape[0])
+    row = index if index >= 0 else (episode_idx - 1) % n
+    row = int(row % n)
+    qpos = _torch.as_tensor(payload["qpos"][row], dtype=_torch.float32, device=sim.device).unsqueeze(0)
+    qvel = _torch.as_tensor(payload["qvel"][row], dtype=_torch.float32, device=sim.device).unsqueeze(0)
+    robot_art.write_joint_state_to_sim(qpos, qvel)
+    robot_art.set_joint_position_target(qpos)
+    robot_art.write_data_to_sim()
+    for obj_index, name in enumerate(payload.get("object_names", [])):
+        obj = interactive_objects.get(name)
+        if obj is None:
+            continue
+        pose = payload["object_pose"][row, obj_index].tolist()
+        pose_wxyz = [pose[0], pose[1], pose[2], pose[6], pose[3], pose[4], pose[5]]
+        obj.write_root_pose_to_sim(_torch.tensor([pose_wxyz], dtype=_torch.float32, device=sim.device))
+        if hasattr(obj, "write_root_velocity_to_sim"):
+            lin = payload["object_lin_vel"][row, obj_index].tolist()
+            ang = payload["object_ang_vel"][row, obj_index].tolist()
+            obj.write_root_velocity_to_sim(_torch.tensor([lin + ang], dtype=_torch.float32, device=sim.device))
+    sim.render()
+    print(f"[reset-bank] applied {path} row={row}", flush=True)
+
+
 def _run_episode(
     sim,
     runtime,
@@ -1199,6 +1230,10 @@ def _run_episode(
         )
 
     _record_joint_limit_baseline("post_home")
+    if getattr(args, "reset_bank", None):
+        _apply_reset_bank_state(args.reset_bank, int(getattr(args, "reset_bank_index", 0)),
+                                episode_idx, sim, robot_art, interactive_objects)
+        _record_joint_limit_baseline("post_reset_bank")
 
     print(f"[ep {episode_idx}] Camera preflight...", flush=True)
     # Capture reads the already-rendered frame.  Sync and render once after
